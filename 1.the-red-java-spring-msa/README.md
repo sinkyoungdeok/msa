@@ -504,6 +504,22 @@ public class Money implements Comparable<Money> {
 
 # 3. 주문 프로젝트 개발
 
+<details><summary> 1. 주문 프로젝트 개발 </summary>
+
+</details>
+
+<details><summary> 2. Partner Domain 개발 </summary>
+
+</details>
+
+<details><summary> 3. Item Domain 개발 </summary>
+
+</details>
+
+<details><summary> 4. Order Domain 개발 </summary>
+
+</details>
+
 # 4. 선물하기 프로젝트 개발
 
 # 5. MSA 전환과 운영에 대한 tip
