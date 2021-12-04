@@ -468,6 +468,38 @@ public class Money implements Comparable<Money> {
 
 <details><summary> 3. 실습 개발 환경 세팅 </summary>
 
+## 3. 실습 개발 환경 세팅
+
+### 실습 환경 
+- Java 11
+  - AdoptOpenJDK 를 설치한다.
+  - https://adoptopenjdk.net/
+- Docker
+  - 원활한 개발과 구현을 위해 로컬에 Docker를 설치하고 MySQL 인스턴스를 띄울 예정이다.
+  - 이를 위해 Docker를 설치한다.
+  - MacOS: https://docs.docker.com/desktop/mac/install/
+  - Window: https://docs.docker.com/desktop/windows/install/
+- IntelliJ
+  - https://www.jetbrains.com/ko-kr/idea/download/
+- DataGrip
+  - 데이터베이스 관리 Tool이다.
+  - https://www.jetbrains.com/ko-kr/datagrip/download/#section=mac
+
+### 프로젝트 다운로드 & 초기 셋팅
+- github에서 프로젝트 다운로드
+  - example-order:  https://github.com/gregshiny/example-order
+  - example-gift: https://github.com/gregshiny/example-gift
+- 로컬 환경에서 docker-compose 실행
+  - spring boot 기반으로 초기 개발을 진행할 때에는 memory기반의 h2db를 사용하면 수시로 변경되는 Entity 스펙에 관계없이 빠른 개발이 가능하지만, 여기에서는 설계와 요구사항을 모두 정의한 상태에서 개발을 진행하기 떄문에 로컬에 MySQL을 설치하고 개발을 진행한다.
+  - 각 프로젝트 root 밑에 /docker-compose 라는 디렉토리를 만들어놨다.
+  - terminal에서 해당 디렉토리에 위치한 다음 아래 명령어를 실행하면 docker내에서 MySQL이 설치된다.
+    - example-order: **docker-compose -p order-db up -d**
+    - example-gift: **docker-compose -p gift-db up -d**
+- docker내의 MySQL을 멈추려면 아래 명령어를 실행한다.
+  - docker-compose down 또는
+  - docker-compose down --volume
+
+
 </details>
 
 # 3. 주문 프로젝트 개발
