@@ -166,7 +166,103 @@ DDD 에서 도메인 모델을 정의하고 구현하는 layer는 domain layer�
       - 해당 제안을 규약으로 가져가면, 다른 개발자들이 해당 도메인을 파악할 때 엔트리 포인트가 되는 로직을 빠르게 찾을 수 있을 것이라 기대한다.
 
 2. domain layer에서의 모든 클래스명이 Xxx**Service**로 선언될 필요는 없다. 
-   
+   - 하나의 도메인 패키지 내에 수많은 Service 클래스가 존재하게 되면, 도메인 전체의 흐름을 컨트롤하는 Service가 무엇인지 알기 어렵다.
+     - 주요 도메인의 흐름을 관리하는 Service는 하나로 유지하고, 이를 위한 support역할을 하는 클래스는 Service이외의 네이밍을 가져가는 것이 좋다.
+   - 또한 하나의 책임을 가져가는 각각의 구현체는 그 책임과 역할에 맞는 네이밍으로 선언하는 것이 가독성에 좋다
+     - 아래와 같은 네이밍이 적절한 예시가 될 것이다
+       - Xxxx**Reader**
+       - Xxxx**Store**
+       - Xxxx**Executor**
+       - Xxxx**Factory**
+       - Xxxx**Aggregator**
+     - 다만 해당 구현체는 domain layer 에서는 interface로 추상화하고 실제 구현체는 Infrastructure layer에서 구현한다.
+     - 즉, domain layer에서는 도메인 로직의 흐름을 표현하고 구현하는 Service 와 ServiceImpl이 있지만 그 외의 상세한 구현은 Reader, Store, Executor 같은 interface를 선언하여 상요하고 이에 대한 실제 구현체는 Infrastructure layer에 두고 활용한다 (DIP)
+
+3. Service간에는 참고 관계를 가지지 않도록 한다.
+  - DDD의 Aggregate Root 개념을 알고 있다면 도메인 내의 Entity 간에도 상하 관계까 명확히 생긴다는 것을 알게 된다.
+  - 이와 마찬가지로 Service로직을 구현하다보면 좀 더 상위 레벨의 Service와 하위 레벨의 Service가 도출되기 마련인데, 이런 구조를 허용하게 되면 상위 레벨의 Service가 하위 레벨의 Service를 다수 참조하게 되면서 로직이 구성된다.
+    - 경험상 시간이 지날수록 특정 Service가 참조하는 하위 Service는 점점 늘어나는 경향이 있다
+    - 이는 테스트 코드 작성을 어렵게 하고 가독성도 많이 떨어지게 된다
+  - Service간에는 참조 관계를 가지지 않도록 원칙을 세우는 것이 좋다
+    - Service내의 로직은 추상화 수준을 높게 가져가고
+    - 각 추상화의 실제 구현체는 잘게 쪼개어 만들면
+    - 도메인읜 전체 흐름이 파악되면서도 로직이 간결하게 유지되는 코드를 가져갈 수 있다
+
+#### 2. Infrastructure Layer
+
+DDD에서 말하는 Infrastructure layer의 역할은 다음과 같다
+- 상위 계층을 지원하는 일반화된 기술적 기능을 제공한다.
+
+여기에서의 Infrastructure layer 표준 구현은 다음과 같다
+1. doamin layer에 선언되고 사용되는 추상화된 interface를 실제로 구현하여 runtime시에는 실제 로직이 동작하게 된다
+   - DIP 개념을 활용한다. 
+   ![image](https://user-images.githubusercontent.com/28394879/144700458-6b40861a-d6e0-4ba3-bfc9-28b6cf1d5b1a.png)
+2. 세세한 기술 스택을 활용하여 domain 의 추상화된 interface를 구현하는 것이므로 비교적 구현에서의 자유도를 높게 가져갈 수 있다 
+   - 읽어 보면 좋을만한 아티클을 공유한다.
+     -  https://deviq.com/principles/persistence-ignorance
+     -  https://enterprisecraftsmanship.com/posts/having-the-domain-model-separate-from-the-persistence-model/
+3. Service간의 참조 관계는 막았지만, Infrastructure layer 에서의 구현체 간에는 참조 관계를 허용한다.
+   - Infrastructure에서의 구현체는 domain layer에 선언된 interface를 구현하는 경우가 대부분이므로 Service에 비해 의존성을 많이 가지지 않게 된다
+   - 로직의 재활용을 위해 Infrastructure내의 구현체를 의존 관계로 활용해도 된다
+   - 다만 이 과정에서도 순환 참조가 발생하지 않도록 적절한 상하관계를 정의하는 것이 좋다(필요시 정의)
+4. (Spring Boot 기반의 구현이라면) @Component를 활용한다
+   - Spring 내의 동일한 bean이라도 @Service와 @Component를 구분하여 선언하여 명시적인 의미를 부여하고자 한다
+   - 이 내용은 여기에서의 권장 표준 정도로 한다
+     - Spring 에서 @Service와 @Component는 동일하게 class를 bean으로 등록하고 큰 차이는 없다
+     - 다만 annotation 을 통해 해당 class의 의미를 부여하고 싶었다.
+
+#### 3. Application Layer
+도메인 주도 설계 (이하 DDD) 에서 말하는 application layer의 역할은 다음과 같다
+- 수행할 작업을 정의한다
+- 도메인 객체가 문제를 해결하도록 지시한다
+- 다른 애플리케이션 계층과의 상호 작용을 한다
+- 비즈니스 규칙은 포함하지 않으며, 작업을 조정하고, 다음 하위 계층에서 도메인 객체의 협력을 위해 업무를 위임한다
+- 그렇기 때문에 해당 Layer는 얇게 유지된다
+- 작업을 조정하기만 하고 도메인 상태를 가지면 안 된다
+
+여기에서 가질 수 있는 의문이 있다면 다음과 같다
+- 수행할 작업을 정의하고 작업을 조정하는게 결국 도메인 로직 아닌가?
+- 다른 애플리케이션 계층과 상호작용을 하게되면 어쩔 수 없이 import와 생성자 인자가 많아질 수 밖에 없는 것 아닌가?
+
+여기에서의 application layer 표준 구현은 다음과 같다.
+1. application layer에서는 
+   - transaction으로 묶여야 하는 도메인 로직과
+   - 그 외의 로직을 aggregation하는 역할로 한정 짓는다.
+   - 그러므로 해당 로직이 두꺼워질 요소는 없다
+2. 해당 layer의 클래스 네이밍은 Xxx**Facade**로 정한다
+   - Facade의 개념은 복잡한 여러 개의 API를 하나의 인터페이스로 aggregation하는 역할이지만
+   - 우리가 정의하는 application layer내의 Facade는 서비스 간의 조합으로 하나의 요구사항을 처리하는 클래스로 정의하였다.
+3. 실제적인 요구사항을 예시로 하여 Facade 구현을 정의해보면 다음과 같다
+   - "주문완료 후 유저에게 카카오톡으로 주문 성공 알림이 전달된다"라는 요구사항이 있다고 해보자
+     - 주문 처리 과정에서의 모든 도메인 로직은 하나의 transaction으로 묶여야 정합성에 이슈가 없다.
+     - 그러나 주문 완료 직후의 카카오톡 알림 발송이 실패하더라도, 주문 로직이 전체 롤백될 필요는 없다
+       - 카카오톡 알림 발송이 실패했더라도 유저는 메인 서비스를 통해서 주문 완료를 확인할 수 있기 떄문에
+   - 이런 맥락을 기반으로 Facade내에 **주문 완료** 메서드를 구현하면 다음과 같다
+        ![image](https://user-images.githubusercontent.com/28394879/144700903-fc2a3663-4bd0-4d90-a62c-f59ffcb3c9c0.png)
+        - Facade안의 completeOrder 메서드에는 transaction을 선언하지 않는다.
+        - orderService.completeOrder(registerOrder) 내에는 transaction이 선언되어 있고, 주문완료 처리 중에 예외가 발생하면 Order Aggregate전체 데이터가 rollback이 된다 (정합성이 지켜지는것)
+        - orderService.completeOrder(registerOrder)가 성공하고 notificationService.sendKakao()가 실패하더라도, 주문 완료 처리는 rollback 되지 않는다.
+        - Order Aggregate의 정합성은 지키면서도, 주요 도메인 로직에는 포함되지 않는 외부 서비스 call (여기서는 카카오톡 알림 발송)은 성공/실패에 크게 민감하지 않게 요구사항을 처리하게 된다 
+
+한줄요약
+- 외부와 커뮤니케이션 하면서 도메인 로직을 요구사항에 맞게 실행하는 역할이 어플리케이션 layer의 역할이다. 
+- 도메인쪽과 도메인외의 기능적인 요소를 조합해서 유저쪽의 하나의 요구사항을 처리하는 layer이다. 
+
+
+#### 4. Interfaces Layer
+DDD에서 말하는 Interfaces layer의 역할은 다음과 같다
+- 사용자에게 정보를 보여주고 사용자의 명령을 해석하는 책임을 진다.
+
+여기에서의 Interfaces layer 표준 구현은 다음과 같다.
+1. API를 설계할 때에는 없어도 되는 Request Parameter는 제거하고, 외부에 리턴하는 Response도 최소한을 유지하도록 노력하자.
+   - 요구하는 Request Parameter가 많다는 것은 관련된 메서드나 객체에서 처리해야 하는 로직이 많다는 것을 의미하고, 이는 관련된 객체가 생각보다 많은 역할을 하고 있다는 신호일 수 있다
+   - Response의 경우도 불필요한 응답을 제공하고 있고 이를 가져다 쓰는 외부 로직이 있다면, 추후 해당 Response 에서 특정 프로퍼티는 제거하기 어렵게 될 수 있다.
+   - API는 한번 회부에 오픈하면 바꿀 수 없는 것이라고 생각하자. 처음부터 제한적으로 설계하고 구현해야 한다.
+2. http, gRPC, 비동기 메시징과 같은 서비스간 통신 기술은 Interfaces layer에서만 사용되도록 하자
+   - 가령 json 처리 관련 로직이나 http cookie 파싱 로직 등이 Domain layer에서 사용되는 식의 구현은 피해야 한다
+   - 그렇게 하지 않으면 언제든지 교체될 수 있는 외부 통신 기술로 인해 domain 로직까지 변경되어야 하는 상황이 발생한다.
+ 
+![image](https://user-images.githubusercontent.com/28394879/144701499-6980eedb-e95a-4c1e-bfdb-b1a8d2b33c97.png)
 
 </details>
 
