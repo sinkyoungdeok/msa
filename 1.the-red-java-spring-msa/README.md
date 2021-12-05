@@ -560,6 +560,105 @@ public class Money implements Comparable<Money> {
 
 ### 2-1. Entity, Service 개요 
 
+#### 요구사항
+- 시스템에 등록된 파트너만이 상품을 등록하고 주문을 처리할 수 있다
+- 파트너 등록 시 파트너명, 사업자 등록번호, 이메일은 필수값이다
+- 파트너는 계약이 종료되면 비활성 상태로 전환된다. 단, 파트너 정보 자체는 삭제되지 않고 유지된다
+- 파트너 등록이 성공하면 등록된 이메일로 가입 완료 안내 메일을 발송한다
+- 그 외 시스템을 사용하는 유저가 기본적으로 기대하는 기본 기능들 - 조회, 등록, 수정, 삭제 등의 기능을 제공해야 한다 
+
+#### 도메인 계층 설계 및 구현 (domain package)
+##### Entity 구현
+- 파트너라는 도메인의 용어를 정의한다
+  - Partner
+- 객체 관점에서 필수 속성과 메서드를 정의한다
+  - 필수 속성
+    - partnerName
+    - businessNo
+    - email
+  - 필수 메서드
+    - 파트너 상태 활성화
+    - 파트너 상태 비활성화
+- 요구사항에는 없지만 시스템의 안정적인 운영을 위해 추가적인 속성을 정의한다
+  - Entity와 PK와 동등하게 사용되는 대체키를 선언한다
+    - partnerToken
+  - 추후 시스템 외부에 파트너 API를 오픈하여 기능을 제공할 떄에는 partner의 식별자가 아니라 대체키를 사용하도록 한다
+  - 하단의 **대체키에 대하여** 단락 참고
+- AbstractEntity를 확장하여 사용한다
+  - 데이터의 생성과 변경에 대한 정확한 일시를 남기는 것은 정말 중요하다
+    - 데이터 처리와 운영, CS 대응
+    - 데이터 기반의 의사 결정을 위한 지표 추출
+  - Entity를 통한 데이터의 등록과 변경 과정에서 해당 일시를 남기는 반복적인 코딩을 막기 위해 JPA에서 제공하는 Auditing을 활용한다
+  ![image](https://user-images.githubusercontent.com/28394879/144730003-3601df7e-102f-4ddd-b857-6d740c6e9bb5.png)
+    - @MappedSuperclass는 JPA Entity 클래스에서 공통 매핑 정보가 필요할 때, 부모 클래스에 속성을 선언하고 상속하여 사용이 가능하게 해주는 annotation이다
+      - 주문 프로젝트의 Entity 전체가 AbstractEntity를 상속하면, 데이터의 등록과 변경 시점을 표현하는 속성을 그대로 상속할 수 있다
+    - @EntityListeners는 이름 그대로 JPA Entity에 특정 이벤트가 발생했을 때의 리스너와 실행 이벤트를 표현하는 annotation이다
+      - 여기서는 Spring JPA가 제공하는 AuditingEntityListener를 연결하여 데이터 등록과 변경 시점을 기록하게 한다
+    - @CreationTimestamp와 @UpdateTimestamp는 데이터 등록과 변경 시험을 기록하는 컬럼의 선언이다
+      - 주문 프로젝트의 모든 시간과 관련 컬럼은 LocalDateTime이 아니라 ZoneDateTime을 사용하기 떄문에 ZonedDateTime을 지원하는 @CreationTimestamp와 @UpdateTimestamp를 사용한다
+      - Spring이 제공하는 @CreatedDate와 @LastModifiedDate는 ZonedDateTime을 지원하지 않는다
+    - JPA Auditing을 활성화하기 위해서 아래와 같이 @EnableJpaAuditing을 추가한다
+    ```java
+    @EnableJpaAuditing
+    @Configuration
+    public class JpaAuditingConfiguration {
+
+    }
+    ```
+
+##### Service 및 Implements 구현 
+- 여기에서 제안할 도메인 로직과 Service의 역할은 다음과 같다
+  - 코드를 읽으면 해당 도메인의 전체 흐름을 파악할 수 있어야 한다
+  - 세세한 구현은 low level 기술은 implements (infrastructure)에 위임하고, 위임을 맡기는 구간을 interface로 정의하여 사용한다
+  - Service간에는 참조 관곌르 두지 않는다
+  - 하단의 **의존성 역전 원칙(DIP)** 단락 참고
+- PartnerService <Interface> 에서 제공해야 하는 요구사항을 정의한다
+  - 파트너 등록
+  - 파트너 정보 조회
+  - 파트너 활성화
+  - 파트너 비활성화
+- PartnerService를 정의하는 과정에서 Command 와 Criteria, Info 객체의 의미를 설명하고 활용한다
+  - Command와 Criteria는 Service메서드의 처리와 조회를 위한 파라미터이다
+    - Command: CUD
+    - Criteria: R
+  - Info는 리턴 객체이다. Database에서 조회하여 가져온 Entity를 그대로 리턴하지 않기 위한 객체이다
+    - 도메인 로직의 리턴값으로 Entity를 그대로 리턴하지 않는다
+      - 도메인 로직과 Entity는 프로젝트 전반에 걸쳐 사용한다. Layer간의 참조 관계를 생각해보면 명확하다
+      - 도메인 로직의 리턴 값으로 Entity를 그대로 전달한다면, domain layer바깥에서 Entity내의 도메인 로직이 호출되거나 Entity의 속성을 변경하는 명령어가 실행될 수 있다
+      - 이는 도메인 로직을 domain layer에 응집하고자 하는 의도에 맞지 않고, 경우에 따라서는 Entity하위 객체의 로딩 과정에서 lazy initialization exception 등이 발생할 수도 있다
+    - Info 객체는 필요에 따라 Entity 의 일부 속성을 가공할 수 있다
+- 구현 과정에서 네이밍에 대한 관례를 정한다
+  - getXxxx: 해당 파라미터로 Entity또는 Projection 리턴. 해당 파라미터로 조회 결과가 없다면 Exception 발생
+  - findByXxxx: Optional<T> 리턴
+  - makeXxxx: DB Operation 과 관계 없이 메모리 상에서 값을 조합하여 객체를 생성
+  - initEntity: makeXxxx 로 생성된 초기 Entity. DB에 저장된 객체가 아니므로 Auto Increment 기반의 PK 값이 null 임
+- 파트너 Entity가 제공하는 기능과 세부적인 기술을 제공하는 implements와의 조합으로 PartnerService의 구현체를 만든다
+  - Partner 도메인의 조회와 저장을 담당하는 interface 를 각각 선언한다
+    - PartnerReader
+    - PartnerStore
+  - 이제 Spring JPA를 사용하여 PartnerReader 와 PartnerStore의 구현체를 만들고, 이를 infrastructure layer에 둔다
+    - 도메인 로직이 low level 기술에 영향을 받지 않도록 DIP 개념을 적용한다 **(클린 소프트웨어 166P 참고)**
+    - Spring JPA를 활용하여 Persistence Layer를 구현하겠지만 추후 다른 Data Access Layer 구현 기술을 사용할 수도 있다
+- 이후 리펙토링을 통해 Service 로직 자체의 가독성을 높인다
+  - 지속적으로 Service의 추상화 레벨을 확인한다 - 도메인 로직의 가독성을 유지하고 너무 세세한 구현이 반영되지 않도록 한다
+  - 모든 비즈니스 로직의 접미사를 XxxService로 정할 필요는 없다
+    - Reader, Store, Aggregator, Executor등의 접미사를 통해 좀 더 해당 객체의 책임과 역할을 상세히 정의할 수 있다
+  - Service간에는 참조 관계를 가지지 않게 하고, 도메인의 요구사항을 한 눈에 파악 할 수 있는 지속적으로 리펙토링 해나간다
+    - 이렇게 하지 않으면 Service 클래스 자체가 뚱뚱해지는 경향이 있다. 도메인 흐름을 파악하기 어렵고 테스트도 어렵다
+    - 기능이 추가될 때마다 생성자의 인자나 import가 과도하게 늘어나지 않도록 주의한다
+- 그 외 항목의 리펙토링을 진행한다
+  - PartnerInfo.of(partner)
+- @Transactional을 붙인다
+  - Service에서 정의하고 구현한 메서드는 요구하항 하나 하나를 반영한다. 이 때, 데이터 정합성을 생각하면 하나의 transaction으로 묶여서 처리되어야 하는 경우가 대부분이다
+    - Service에서는 Domain의 Aggregate Root와 연관된 객체를 모두 가져오고 low level 기술을 활용하여 데이터를 조회하고 저장한다
+    - 이 때, 데이터 처리 및 외부 API 호출의 성공 / 실패 여부에 따라서 처리한 데이터를 전체 commit 또는 rollback을 해야할 수도 있다
+    - 가령, 부모 객체는 데이터베이스 저장에 실패하고 자식 객체만 저장에 성공하면 데이터 정합성 측면에서 이슈가 된다
+    - 데이터 정합성을 위해 의미있는 작업 단위마다 @Transactional 을 붙여야 한다
+  - readonly의 경우 성능 최적화 측면에서 선언하는 것이 좋다
+    - https://vladmihalcea.com/spring-read-only-transaction-hibernate-optimization/ 참고
+
+
+
 ### 2-2. 대체키와 DIP
 
 ### 2-3. Entity, Service 구현
