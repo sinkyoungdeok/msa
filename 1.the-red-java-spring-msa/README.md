@@ -661,6 +661,53 @@ public class Money implements Comparable<Money> {
 
 ### 2-2. 대체키와 DIP
 
+#### 대체키에 대하여 
+
+##### 식별자, PK
+- DDD의 Entity개념에서 고유한 식별자는 중요한 개념이다
+- Entity는 자신의 생명주기동안 형태와 내용이 급격하게 바뀔 수도 있지만 연속성은 유지해야 한다 **(도메인 주도 설계 93p 참고)**
+- 이렇게 변화하는 Entity를 추적하려면 식별성이 부여되어야 하고, 식별자는 해당 시스템 내에서 유일하고 변경되어서는 안 된다
+- 보통 DBMS로 영속성을 관리하는 시스템에서의 Entity 식별자는 Table의 PK와 매핑되는 경우가 대부분이다
+- MySQL의 경우 주로 AUTO_INCREMENT bigint 속성을 활용한다 
+
+##### 대체키의 정의, 필요성
+- 원래 대체키라는 용어 (Surrogate Key)는 자연키라는 용어와 대칭하는 개념인데, 여기에서는 Entity의 식별자와 동급의 의미를 가지는 추가 식별자 정도로 용어를 정의하고자 한다
+- Entity의 식별자는 외부에 오픈하거나 오용되지 않도록 주의하고, 식별자가 아닌 대체키를 오픈하는 것이 여러모로 좋다
+- Entity 식별자를 외부에 직접 오픈했을 때의 이슈 상황을 예시로 설명하면서, 대체키 사용의 필요성을 대신하고자 한다
+- 예시 1 - 2020년 5월 특정 서비스의 실제 사례
+  - BigInt(Long) 형태의 유저 아이디를 URL PATH로 사용하여 유저의 거래내역을 노출하는 GET API가 있다고 하자
+  - 이런 경우, (인증 과정이 없다는 전제하에) URL의 숫자만 조작하면 다른 이의 거래 내역을 손쉽게 볼 수 있게 된다
+  - 이슈 발생 후 랜덤 스트링 형태의 대체키로 변환하여 API를 수정함
+- 예시 2 - 외부 연동 서비스
+  - 외부 협력사와 자사 서비스 간에 상품 데이터 연동 과정에서 키 값을 시스템 내부의 PK로 사용했다고 가정하자
+  - 그렇게 되면 양사간의 데이터는 자사 시스템 내부의 PK로 강하게 묶이게 된다
+  - 이 후 자사 시스템에서 데이터베이스를 MySQL 에서 MongoDB 등으로 변경하게 된다면, 달라진 PK 체계로 인해 많은 공수가 발생할 수 있다. 외부 협력사와 추가적인 식별자 논의도 진행해야 한다
+
+##### 구현
+- 시스템 내부에서의 Entity 식별자는 Long 타입의 id를 사용하고, 외부에 오픈하여 사용할 때에는 대체키를 사용한다
+- 대체키는 String 기반의 token을 생성하고 unique index로 설정하여 사용한다
+- 대체키를 사용할 떄에는 역시 성능에 대한 고민이 많을 것인데 MySQL 기준으로 1천만건 이상으로 넘어가기 전까지는 random string으로 사용해도 조회 성능에 크게 이슈가 없고, 성능을 고려한다면 UUID를 rearranged 하여(UUID의 시간값을 맨앞으로 배치함으로써 성능 최적화) 사용하는 것을 검토할 수 있다.
+  - https://www.percona.com/blog/2014/12/19/store-uuid-optimized-way/ 참고
+   ![image](https://user-images.githubusercontent.com/28394879/144731057-b18984b8-2387-4410-90ed-92ffd9d84288.png)
+
+#### 의존성 역전 원칙 (DIP)
+- DIP를 간략히 정의하면 추상화 레벨이 높은 상위 수준의 모듈이 추상화 레벨이 낮은 하위 모듈에 의존하면 안된다는 것이다
+- 도메인의 정책이나 업무 모델을 포함하는 것을 상위 수준의 모듈이라고 볼 수 있고, 이를 구현하기 위한 구체적인 세부 기술을 하위 모듈이라고 볼 수 있다
+- 상위 수준의 모듈이 하위 수준의 모듈에 의존하는 전통적인 소프트웨어 개발 방식과 달리, 추상화된 상위 모듈에 하위 모듈이 의존하게 만드는 것이 의존성 역전 원칙(Dependency Inversion Principle) 이다
+- DIP 개념으로 접근한 PartnerService 와 PartnerReader, PartnerRepository를 도식화하면 다음과 같다
+  ![image](https://user-images.githubusercontent.com/28394879/144731135-4f6066c9-827d-45ce-bdde-8b2aff75aafc.png)
+  - PartnerReaderImpl의 실제 구현은 Spring JPA를 활용하고 있지만, 추후 Spring JDBC 또는 MyBatis같이 다른 low level 구현을 사용하더라도 PartnerService에서는 특별한 변경 없이 사용이 가능하게 된다
+- (추가) 순수한 도메인 모델과 ORM 사용에 대한 좋은 아티클
+  - https://enterprisecraftsmanship.com/posts/having-the-domain-model-separate-from-the-persistence-model/
+  - ORM을 사용하다보면 순수한 도메인 모델 (Entity)을 설계하고 구현하는 과정에서 제한을 두어야 하는 경우가 생긴다
+  - 이를 극복하기 위해 별도의 DAO 클래스를 둘 수 있는데, DAO 관련 구현 비용은 비싸지 않게 유지하면서도 도메인 모듈을 순수하게 유지할 수 있다고 보여진다 -> 하지만 실제로는 그렇지 않다
+  ![image](https://user-images.githubusercontent.com/28394879/144731169-b2186d03-5cae-4acb-aec8-e856fde236fe.png)
+  - DDD에서 ORM은 구현의 복잡성과 도메인의 순수성 사이에서 적절한 트레이트 오프를 제공한다는 내용이다
+  - Spring Data JPA는 그런 개념으로 접근해야 한다. 
+
+
+   
+
 ### 2-3. Entity, Service 구현
 
 ### 2-4. Application, Interface 개요
