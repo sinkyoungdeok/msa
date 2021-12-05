@@ -556,6 +556,18 @@ public class Money implements Comparable<Money> {
 
 <details><summary> 2. Partner Domain 개발 </summary>
 
+## 2. Partner Domain 개발
+
+### 2-1. Entity, Service 개요 
+
+### 2-2. 대체키와 DIP
+
+### 2-3. Entity, Service 구현
+
+### 2-4. Application, Interface 개요
+
+### 2-5. Application, Interface 구현 
+
 </details>
 
 <details><summary> 3. Item Domain 개발 </summary>
