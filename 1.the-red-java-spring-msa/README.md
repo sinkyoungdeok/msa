@@ -708,6 +708,178 @@ public class Money implements Comparable<Money> {
 
 ### 2-3. Application, Interface 개요
 
+#### 1. Facade 구현
+- DDD에서 말하는 응용 계층의 정의는 다음과 같다
+  - 수행할 작업을 정의한다 **(도메인 주도 설계 72P 참고)**
+  - 도메인 객체가 문제를 해결하도록 지시한다
+  - 다른 애플리케이션 계층과의 상호 작용을 한다
+  - 비즈니스 규칙은 포함하지 않으며, 작업을 조정하고, 다음 하위 계층에서 도메인 객체의 협력을 위해 업무를 위임한다
+  - 작업을 조정하기만 하고 도메인 상태를 가지면 안 된다 
+
+- 여기에서 제안할 응용 계층의 구현은 아래와 같다
+  - 비즈니스 결정을 내리진 않지만 수행할 작업을 정의해야 한다
+  - 따라서 주로 transaction 으로 묶여야 하는 도메인 로직과 그 외의 로직을 aggregation 하는 역할로 한정 짓는다
+  - 그리고 네이밍으로 Service와 구분 짓기 위해 Xxx**Facade**라는 접미사를 활용한다
+    - Facade 패턴은 다양한 외부 인터페이스를 하나의 인터페이스로 통합하는 개념으로 사용되지만, 여기에서는 로직의 조합이라는 측면을 강조하기 위해 Facade를 차용한다
+
+- 응용 계층에서 구현해야할 Partner 도메인의 요구사항을 구현한다
+  - 외부에 전달할 요구사항을 온전히 만족하는 메서드를 구현한다
+    - 보통 PartnerService에 정의된 인터페이스와 일대일 매칭되는 메서드가 도출된다
+  - 그 중 파트너 등록의 경우, 등록 성공 후 해당 파트너에게 이메일로 등록 성공 알림을 보내는 요구사항이 있다
+    - 파트너 등록 과정에서의 모든 도메인 로직은 하나의 transaction으로 묶여야 정합성에 이슈가 없다
+    - 이메일 발송의 경우 발송에 실패하더라도 파트너 등록이 정상적으로 이루어졌다면 큰 문제가 안되는 상황이다
+      - 이런 식의 요구사항에 대한 판단과 해석은 담당 PO 또는 기능의 사용자와 협의하면서 정한다
+    - PartnerService와 NotificationService의 조합으로 요구사항을 만족시키는 구현을 완성한다
+  - 응용 계층을 하나 더 둠으로써 도메인 계층에서 처리하기 애매한 요구사항을 충족할 수 있는 여유가 생긴다
+    - 필요에 따라서 여러 개의 Info를 조합하여 만드는 Result 객체가 필요할 수 있다
+    - 이 때에는 여러 개의 Service를 호출 한 후 이를 조합하는 Result 생성 로직이 생길수 있다 
+
+#### 2. Controller 구현 
+- DDD에서 인터페이스 계층의 역할은 다음과 같다   
+  - 사용자에게 정보를 보여주고 사용자의 명령을 해석하는 책임을 진다 **(도메인 주도 설계 72P 참고)**
+  - 외부 인터페이스 구현 기술에 관계없이 도메인 계층 로직을 호출하고 이에 대한 결과를 변환하여 응답으로 제공한다
+  - HTTP API, gRPC, 비동기 메시징 등의 다양한 통신 방법을 사용할 수 있어야 한다
+
+
+- 여기에서는 주로 HTTP API를 사용하고 필요에 따라서 메시지 기반의 비동기 통신을 사용한다
+
+- 외부 인터페이스 계층 구현은
+  - 서비스 전체의 시스템간 인터페이스 표준을 정의하고 그에 맞게 외부 호출과 응답이 정의되도록 구현해야 한다
+  - 여기에서는 주로 사용할 HTTP API의 요청과 응답 표준음 다음과 같다
+  ```
+  /**
+  API endpoint 는 /api/{version}/{도메인명} 의 패턴을 prefix 로 한다
+  content-type 은 application/json 으로 한다
+  **/
+  // 성공 응답
+  {
+  "result": "SUCCESS",
+  "data": "plain text 또는 json 형태의 데이터",
+  "messsage": "성공 메시지",
+  "error_code": null
+  }
+  // 실패응답
+  {
+  "result": "FAIL",
+  "data": null 또는 json 형태의 데이터
+  "messsage": "에러 메시지",
+  "errorCode": "plain text"
+  }
+  ```
+  - API 처리 결과에 따른 응답 형태는 다음과 같은 의미를 지닌다. 
+  ```
+  1. http status: 2xx 이면서 result: "SUCCESS"
+  → 시스템 이슈 없고, 비즈니스 로직도 성공적으로 처리됨
+  2. http status: 2xx 이면서 result: "FAIL"
+  → 시스템 이슈 없고, 비즈니스 로직 처리에서 에러가 발생함
+  → 예시: 중복 데이터가 이미 존재함 / 인증 이슈
+  3. http status: 4xx 이면서 result: "FAIL"
+  → 잘못된 request 가 전달됨
+  → 예시: 필수 요청 파라미터 키를 전달하지 않은 경우
+  4. http status: 5xx 이면서 result: "FAIL"
+  → 시스템 에러 상황. 집중적으로 모니터링할 응답
+  → 예시: 시스템 장애
+  ``` 
+  - 하단의 **API 응답 체계** 단락 참고
+
+- partner 도메인의 API 구현은 다음과 같다
+  - 동기식 http api로 구현한다
+  - content-type은 application/json 으로 한다
+  - API endpoint 는 **/api/{version}/partners** 의 패턴을 prefix로 한다
+
+- partner 도메인의 API를 구현하기 전에 시스템 간의 일관된 응답 체계를 위한 공통 응답과 변환 로직을 구현한다
+  - BaseException
+  - CommonResponse
+  - CommonControllerAdvice
+
+- partner도메인의 API를 구현한다
+  - 외부 서비스의 요청과 응답은 내부 도메인 로직을 처리하는 layer와 명확히 분리되어야 한다
+    - 이를 위해 interface layer에서 사용할 dto를 정의하고, 해당 dto가 domain layer로 침투되지 않도록 유의해야 한다
+    - 이를 위해 별도의 convert로직이 필요하다
+      - request dto를 domain의 Command 또는 Criteria로 변환하는 로직과
+      - doamain의 Info를 response dto로 변환하는 로직이 필요하다
+      - 변환 로직을 dto 내에 구현하는 것은 응집도를 높이는 측면에서 좋은 구현이 된다
+    - 인터페이스 계층에서만 사용할 dto를 정의한다
+      - 이 때 static inner class를 적극 활용한다. 장점과 단점이 공존하나 여러 개의 dto를 목적에 맞게 묶어둘 수 있다는 장점이 더 크게 다가온다
+      - Validation을 정의하고 @Valid를 선언한다
+      - toCommand()를 활용한다
+    - Facade를 호출하고 결과를 받아 API 응답에 맞게 변환한다
+      - CommonResponse.success(response)
+      - Facade 호출 과정에서 Exception이 발생하면 CommonControllerAdvice에서 이를 처리할 것이다
+      - 그러므로 불필요한 try-catch는 선언할 필요가 없다
+    - 외부 요청과 응답에 대한 일괄적인 로깅을 구현하면 추후 운영에 도움이 된다
+      - 이 때 AOP를 활용한 로깅을 구현하면 Controller의 request, response를 로깅하기 위해 일일이 logger 붙이지 않아도 된다
+      - 하단의 **로깅의 중요성** 단락 참고
+
+#### 3. 로깅의 중요성
+- 신규 서비스를 접하게 되면 가장 먼저 확인하는 것은 로깅에 대한 것이다
+  - 중앙화된 로깅이 구축되어 있는지
+  - 로깅 시에 남기는 항목이 무엇인지
+  - 에러 발생 시 해당 로그를 통해 버그의 원인을 찾을 수 있는지
+  - 로그 모니터링을 통해 적절한 시스템 알람이 전송되고 있는지
+- 특히 API 레벨의 request, response 로깅은 추후 리펙토링에 필수 항목이 될 수 있다 
+  - 테스트 코드가 적절히 작성되지 않은 시스템 환경에서는 API의 request, response 로그만이 시스템 개선을 가능하게 해준다
+  - 문서화된 스펙보다 정확한 것은 API의 request, response 로그이다
+- ELK + kafka 스텍은 생각보다 구축이 어렵지 않다
+  - 자체적인 구축이 어렵다면 https://sentry.io 와 같은 로깅 및 애플리케이션 모니터링 서비스를 활용해도 좋다
+  - 어떤 것을 사용하든지 시스템 전체를 파악하기 위한 로깅과 모니터링 수단은 갖춰야 한다
+- 서비스를 이용하는 유저가 에러를 접하게 되면 개발팀은 이를 즉시 인지할 수 있어야 한다. 또한 이를 기반으로 빠르게 에러 상황에 대응할 수 있어야 한다 
+
+#### 4. API 응답 체계 
+- API의 응답 체계는 시스템 전체가 일관되고 명확한 형태를 가진다면, 어떠한 구조이든 문제가 되지 않는다
+- 실제로 Google, Facebook, Naver와 같은 서비스도 각자 고유한 방식의 API 응답 체계를 가진다
+  - Google의 경우 http status code를 적극적으로 활용한다
+    - https://cloud.google.com/storage/docs/json_api/v1/status-codes
+    - Successful requests return HTTP status codes in the 2xx range. Failed requests return status codes in the 4xx and 5xx ranges.
+  - Facebook의 경우 http status code를 상세히 활용하지는 않는 편이다
+    - https://developers.facebook.com/docs/graph-api/guides/error-handling
+    - code와 error_subcode라고 별도로 정의한 값으로 에러를 표현한다
+- 어떤 형태이든지 시스템 전체 API의 응답이 명시적이고 일관된 것이 중요하다
+
+- 여기에서 구현하는 프로젝트에서는 - 아래와 같은 성공과 실패 응답 형태를 가진다
+  ```
+  /**
+  API endpoint 는 /api/{version}/{도메인명} 의 패턴을 prefix 로 한다
+  content-type 은 application/json 으로 한다
+  **/
+  // 성공 응답
+  {
+  "result": "SUCCESS",
+  "data": "plain text 또는 json 형태의 데이터",
+  "messsage": "성공 메시지",
+  "error_code": null
+  }
+  3.2. partner 도메인 개발 (2) 7
+  // 실패응답
+  {
+  "result": "FAIL",
+  "data": null 또는 json 형태의 데이터
+  "messsage": "에러 메시지",
+  "errorCode": "plain text"
+  }
+  ``` 
+- 여기에서 구현하는 프로젝트에서는 http status와 응답 값이 result를 적절히 섞어서 응답값에 아래와 같은 의미를 부여한다.
+  ```
+  1. http status: 2xx 이면서 result: "SUCCESS"
+  → 시스템 이슈 없고, 비즈니스 로직도 성공적으로 처리됨
+  2. http status: 2xx 이면서 result: "FAIL"
+  → 시스템 이슈 없고, 비즈니스 로직 처리에서 에러가 발생함
+  → 예시: 중복 데이터가 이미 존재함 / 인증 이슈
+  3. http status: 4xx 이면서 result: "FAIL"
+  → 잘못된 request 가 전달됨
+  → 예시: 필수 요청 파라미터 키를 전달하지 않은 경우
+  4. http status: 5xx 이면서 result: "FAIL"
+  → 시스템 에러 상황. 집중적으로 모니터링할 응답
+  → 예시: 시스템 장애
+  ```
+- Spring Boot 에서는 ControllerAdvice라는 개념을 두어 시스템 전역에서 발생하는 예외를 처리할 수 있게 한다
+  - Controller가 처리하는 API 호출 과정에서 Exception이 발생할 경우, Exception을 catch 하여 별도의 처리를 해야 할 필요성이 없다면 -> ControllerAdvice 까지 Exception 넘어오도록 그대로 throw 하는 것이 좋다
+  - ControllerAdvice에서는 Exception을 catch 하여 시스템에서 정의한 API 응답에 맞게 응답을 정의하여 내려준다
+  - 코드 상의 CommonControllerAdvice에서는 별도로 정의한 BaseException을 확장한 Exception이 발생하는 경우, 코드를 구현한 개발자가 이미 인지한 예외상황이라고 판단하여 http status : 200에 result : FAIL을 내려준다
+  - BaseException을 확장하지 않은 예상치 못한 Exception이 발생하는 경우, http status: 500 을 내려주어 전사 모니터링에서 트래킹 되도록 하고 적절한 알람이 noti되도록 처리한다
+![image](https://user-images.githubusercontent.com/28394879/144834630-60c31958-17fc-4882-b51f-8044ef756605.png)
+
+
 </details>
 
 <details><summary> 3. Item Domain 개발 </summary>
