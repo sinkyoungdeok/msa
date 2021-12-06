@@ -706,13 +706,7 @@ public class Money implements Comparable<Money> {
   - Spring Data JPA는 그런 개념으로 접근해야 한다. 
 
 
-   
-
-### 2-3. Entity, Service 구현
-
-### 2-4. Application, Interface 개요
-
-### 2-5. Application, Interface 구현 
+### 2-3. Application, Interface 개요
 
 </details>
 
