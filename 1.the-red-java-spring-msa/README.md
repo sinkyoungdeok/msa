@@ -1323,4 +1323,12 @@ Factory가 새로운 객체를 만들어 내는데 반해 Repository는 기존 �
 
 # 4. 선물하기 프로젝트 개발
 
+<details><summary> 1. Flow 설계 및 검토 </summary>
+
+</details>
+
+<details><summary> 2. 선물하기 프로젝트 구현 </summary>
+
+</details>
+
 # 5. MSA 전환과 운영에 대한 tip
