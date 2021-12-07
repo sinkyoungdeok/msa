@@ -884,6 +884,241 @@ public class Money implements Comparable<Money> {
 
 <details><summary> 3. Item Domain 개발 </summary>
 
+## 3. Item Domain 개발 
+
+### 요구사항
+- 시스템에 등록되고 활성화된 파트너는 상품을 등록할 수 있다
+- 등록된 상품은 유저가 주문을 받아 판매될 수 있다
+- 상품은 상품명, 가격 등의 기본 정보와 색상, 사이즈와 같은 옵션으로 구성된다
+- 상품은 옵션 정보 없이 기본값으로만 저장될 수도 있다
+- 주문 화면에서 보여지는 상품의 옵션은 파트너사가 원하는 순서에 맞게 노출될 수 있어야 한다
+- 상품 구매 시 특정한 옵션을 선택하면 가격이 추가될 수 있다
+- 상품은 판매 준비중, 판매중, 판매 종료와 같은 상태를 가진다
+- 그 외 시스템을 사용하는 유저가 기본적으로 기대하는 기본 기능들 - 조회, 등록, 수정, 삭제 등의 기능을 제공해야 한다
+- **여기에서는 실제의 복잡한 상품 도메인 요구사항을 간소화 하였다. (수량 등의 속성 생략)**
+
+### 도메인 계층 설계 및 구현 (domain package)
+#### DDD 의 Aggregate
+**(도메인 주도 설계 133p ~ 139p 참고)**  
+- 상품 도메인은 아래의 Entity로 구성된다
+  - Item
+  - ItemOptionGroup
+  - ItemOption
+
+- 이 중 Item은 Item 도메인 전체의 Aggregate Root 역할을 한다
+  - Item Aggregate 경계 밖에서는 Item을 제외한 Aggregate 내부 구성요소를 참조할 수 없다
+  - Item을 획득하면 Aggregate 내부의 객체를 탐색해서 획득할 수 있게 된다
+  - Item Aggregate 내부에서는 데이터가 변경될 때 마다 유지돼야 하는 일관된 규칙이 지켜져야 한다
+  - 일관된 규칙은 Aggregate Root에 적용되는 모든 트랜잭션 내에서 지켜져야 한다 -> 규칙이 깨진다면 트랜잭션 롤백이 발생한다는 것
+  - 하단의 **DDD 에서의 Aggregate** 단락 참고
+
+- Item Aggregate를 만들어내는 과정에서 Factory의 사용을 검토한다
+  - Item 도메인의 경우 객체 생성 과정에서 Item 뿐만 아니라 OptionGroup 과 Option의 정합성이 일관되게 지켜져야 한다
+  - 이 과정에서 각 클래스의 생성자만으로는 Item Aggregate 생성 과정의 복잡한 규칙을 표현하기 어렵다
+  - 자신의 책임과 역할이 다른 객체를 생성하는 프로그램 요소를 Factory라고 하는데, 복잡한 객체와 Aggregate 인스턴스를 생성하는 책임을 맡기기에 적합하다
+    - 여기에서는 Item 도메인 내에 ItemOptionSeriesFactory를 정의하고 Implements영역에는 해당 Factory를 활용한다
+    - Factory의 역할에서 객체를 데이터베이스와 같은 저장소에 영속화시키는 것은 포함되지 않는다. 이에 대한 역할은 Repository가 가져간다
+  - 하단의 **Factory 와 Repository** 단략 참고
+- 아래는 Item Aggregate를 표현하는 클래스 다이어그램이다
+  ![image](https://user-images.githubusercontent.com/28394879/144949655-1df1b0cc-4a4d-46e2-af70-a6afc756223b.png)
+
+- 아래는 디자인된 주문 화면의 예시이다 
+  ![image](https://user-images.githubusercontent.com/28394879/144949702-d063fb34-bb97-4c91-a564-b41b8bbb1d5d.png)
+
+- Item Aggregate와 실제 상품과 옵션값의 예시 매핑은 아래와 같다.
+  ![image](https://user-images.githubusercontent.com/28394879/144949827-2aed9bce-c18f-44bc-b289-194ddad95af2.png)
+
+
+### Entity 구현
+- 요구사항을 기반으로 Item 과 ItemOptionGroup, ItemOption의 필수 속성과 메서드를 정의하고 구현 방향을 정의한다
+  - 필수 속성
+    - itemToken **(대체키)**
+    - partnerId
+    - name
+    - price
+    - status
+    - ordering
+  - 필수 메서드
+    - 상품 상태 변경
+- Item과 ItemOptionGroup, ItemOption 간의 연관관계를 설정한다
+  - OneToMany, ManyToOne 등의 연관관계를 설정하여 객체 간의 참조 관계를 명확히 알 수 있도록 한다
+    - ManyToOne만으로 객체 관계를 설정하는 것이 단방향을 유지하고 성능 측면에서도 좋겠지만
+    - 실제 도메인 로직 구현 과정에서는 OneToMany 사용에 대한 장점이 있기 떄문에 적절한 타협이 필요하다
+    - 여기서는 OneToMany와 ManyToOne을 함께 사용하여 성능상의 이슈를 없애고, 양방향 참조로 인해 발생할 수 있는 버그 상황은 피하도록 한다
+  - 하단의 **연관관계 설정** 단락 참고
+
+### Service 및 Implements 구현
+- ItemService <Interface> 에서 제공해야 하는 요구사항을 정의한다
+  - 상품 등록
+  - 상품 정보 조회
+  - 상품 판매 가능 상태로 변경
+  - 상품 판매 불가능 상태로 변경
+
+
+**상품 등록의 경우**
+- Item Aggregate 생성을 위한 Factory를 구현한다
+  - 각 객체의 필수값 여부를 확인하고, 각 객체간의 부모 자식 관계를 설정하는 생성 과정은 하나의 생성자 안에서 처리하기에는 복잡도가 높다
+    - ItemOptionGroup 생성 시에는 Item의 reference가 필요하고, ItemOption에서는 ItemOptionGRoup의 reference가 요구된다
+    - 그렇기 때문에 하나의 트랜잭션 안에서 Item, ItemOptionGroup, ItemOption을 순차적으로 생성하는 구조를 가지게 된다
+    - 또 경우에 따라서 Option 정보가 없는 상품의 경우는 Item만 독립적으로 생성하게 된다
+  - Option 계열의 복잡한 객체 생성 로직은 ItemOptionSeriesFactory에서 구현하고, 도메인 서비스에서는 적절한 추상화를 통해 가독성을 유지하도록 한다
+    - Factory 생성의 범위를 Aggregate 전체로 할 수도 있지만, 여기에서는 Option 계열의 Factory만으로 한정 짓는다
+    - 이를 통해 1) Item 생성 후에 2) Option 계열의 Entity를 생성한다는 도메인 로직을 표현하고 싶었다
+- 생성 과정에서 Item Entity의 필수 파라미터인 partnerId의 획득 과정을 살펴보자
+  - 서버 바깥의 프론트엔드에서는 partnerId가 아닌, partnerToken을 전달했을 것이다
+  - partnerToken으로 Partner 객체를 로딩 한 후, 그것을 통해 partnerId를 획득한다
+  - Item Entity에서 partnerToken가 아닌 partnerId를 저장했지만 partnerToken으로 저장해도 무방하다
+    - partnerToken으로 저장하면 Item Aggregate 생성 과정에서 partner 객체 조회 쿼리를 호출하지 않아도 되고
+    - partnerId로 저장하면 table내에서 item 정보를 확인할 때 token 보다는 한눈에 읽기 쉽다는 장점이 있다
+**상품 조회의 경우**  
+- 우선 itemToken으로 Item Aggregate의 Root가 되는 Item을 조회한다
+- 이를 기반으로 ItemInfo 객체를 생성 후 리턴한다
+  - ItemInfo 객체는 데이터베이스에서 조회하여 가져온 Entity를 그대로 리턴하지 않기 위한 객체이다
+  - ItemInfo 객체는 Item Aggregate의 매핑이 가능하도록 적절히 구조화하여 생성한다
+  - **1 : N : N**의 구조를 가지는 **Item : ItemOptionGroup : ItemOption**를 생각 할 때, 두 번의 stream 구문으로 ItemInfo 객체 생성이 가능하다
+- 구현이 완료되면 리펙토링을 진행한다
+  - Item Aggregate와 ItemInfo간에는 반복적인 파라미터 매핑 코드가 존재하게 된다
+  - 이런식의 boilerplate 코드를 줄이기 위해 매핑 라이브러리를 사용한다
+  - 여기에서는 MapStruct라는 오픈소스를 사용할 것이다
+  - 하단의 **MapStruct 사용** 단락 참고 
+
+### 응용 계층, 외부 인터페이스 계층 구현(application, interfaces package)
+
+#### Facade 구현
+- Item Facade에서는 item domain에서 요구사항을 처리하도록 domain service를 호출하는 이상의 역할은 없다
+- 이런 경우 Controller에서 곧장 Service를 호출할 수도 있지만, 추후의 요구사항 대응을 위한 buffer를 생각할 때 Facade를 유지하는 것이 낫다. 여기에서는 Facade를 사용한다
+  - 프로젝트 전체의 구조 유지
+  - 추후 요구사항 추가 및 변경이 대응에 용이함
+
+#### Controller 구현
+- Item Aggregate 생성을 위한 request dto와 ItemInfo 조회 시 사용할 response dto는 Item Aggregate 만큼 복잡한 구조를 가진다
+  - 이런 경우 dto를 domain측 객체로 변환 시 bolierplate code가 많이 생길 수 있다
+  - 이는 MapStruct를 사용하여 해결한다
+
+---
+
+### DDD에서의 Aggregate
+**(도메인 주도 설계 133p ~ 139p 참고)**  
+
+**필요성** 
+- 모델 내에서 복잡한 연관관계를 맺는 객체를 대상으로 일관된 규칙을 보장하기는 쉽지 않다
+- 개별 객체만이 아닌 서로 밀접한 관계에 있는 객체 집합에도 변경에 대한 일관된 규칙 (=불변식) 이 유지되어야 하기 때문이다
+- 이를 위해 Aggregate를 구성하고 Aggregate에 적용되는 불변식은 각 트랜잭션이 완료될 때 이행되도록 한다
+
+**특징**
+- Aggregate는 데이터 변경의 단위로 다루는 연관 객체의 묶음을 말한다
+- 각 Aggregate에는 루트(Root)와 경계(Boundary)가 있는데
+  - 경계는 Aggregate에 무엇이 포함되고 포함되지 않는지를 정의한다
+  - 루트는 단 하나만 존재하며, Aggregate에 포함된 특정 Entity를 가리킨다
+- 각 루트 Entity는 전역 식별성을 지니고, 경계 안의 Entity는 지역 식별성을 지닌다
+- Aggregate 경계 밖에서는 루트 Entity를 제외한 Aggregate 내부의 구성요소를 참조할 수 없다
+- Aggregate 경계 안의 어떤 객체를 변경하더라도 전체 Aggregate의 불변식은 모두 지켜져야 한다
+
+즉, Aggregate는 생명주기의 전 단계에서 불변식이 유지되어야 할 범위를 표시해준다
+
+### Factory와 Repository
+**(도메인 주도 설계 140p ~ 167p 참고)**  
+#### Factory
+**필요성**  
+- 복잡한 객체를 생성하는 일은 도메인 계층의 책임이지만, 그것이 모델을 표현하는 객체에 속하는 것은 아니다
+  - 자동차를 조립하는 것과 자동차를 운전하는 것은 다른 영역의 것이다. 결코 동시에 일어날 수 없는 일이다
+- 그렇다고 객체의 생성을 클라이언트에 두면 Aggregate의 캡슐화를 위반하고 클라이언트의 설계가 지저분해지게 된다
+- 복잡한 객체와 Aggregate의 인스턴스 생성을 책임지는 별도의 객체를 선언하여 운영하는 것이 필요하다
+
+**특징**  
+- 자신의 책임과 역할이 다른 객체를 생성하는 것인 프로그램 요소를 Factory라고 한다
+- Factory는 해당 Factory에서 만들어내는 객체와 매우 강하게 결합돼 있으므로, 자신이 생성하는 객체와 가장 가까이 있어야 한다
+- Factory는 Aggregate에서 유지되어야 할 불변식 로직을 Factory내에 둬서 Aggregate내에 들어 있는 복잡한 요소를 줄일 수도 있다
+
+
+특정 객체나 Aggregate를 생성하는 일이 복잡해지거나 내부 구조를 너무 많이 드러내는 경우 -> Factory를 사용한다
+
+#### Repository
+**필요성**
+- 객체를 이용해 뭔가를 하려면 해당 객체에 대한 참조를 가지고 있어야 한다
+- 클라이언트는 이미 존재하는 도메인 객체의 참조를 획득할 수 있는 실용적인 수단을 필요로 한다
+  - 해당 객체의 속성을 활용하여 검색하는 식으로 객체의 참조를 획들할 수 있어야 한다
+  - 이 때 마음대로 데이터베이스에 질의를 수행하면 도메인 객체와 Aggregate의 캡슐화를 어기는 질의를 수행할 수도 있게 된다
+- Repository는 이와 같은 로직을 캡슐화하여 구현에 있어서 모델에 집중할 수 있게 해주는 개념적 틀에 해당한다
+
+**특징**
+- 클라이언트는 지정된 기준에 근거해 객체를 선택하는 질의 메서드를 이용해 Repository에서 객체를 요청하게 된다
+- 데이터베이스 관련 기술은 다양하고 복잡한데 이를 Repository인터페이스로 도출하면 클라이언트는 단순하고 의도가 드러나는 구현이 가능하고 실제 복잡한 구현은 인프라스트럭쳐에 맡길 수 있다
+- 즉, 객체를 추가하거나 제거하고 조회하는 기술을 캡슐화하여 제공하는 것이 Repository의 특징이다
+
+Factory가 새로운 객체를 만들어 내는데 반해 Repository는 기존 객체를 찾아낸다
+
+### 연관관계 설정
+- 객체와 객체, 테이블과 테이블이 연관관곌르 맺는 것에는 근본적인 차이가 있따
+  - 팀과 회원이라는 개념으로 둘 가느이 차이를 비교하면 다음과 같다
+    - 하나의 팀에 여러 명의 회원이 포함된다는 개념을 생각하면 팀과 회원의 관계는 **팀 : 회원 = 1 : N**의 관계가 된다
+    - 객체의 경우 2개의 연관관계가 생긴다
+      - 팀 -> 회원의 연관관계 1개
+      - 팀 <- 회원읜 연관관계 1개
+    - 테이블의 경우, 회원 테이블에 팀 PK를 가짐으로써 (외래키) 양방향 연관관계가 생긴다
+      - 팀 <--> 회원 연관관계
+- 객체의 일대다, 다대일 관계에서 연관관계의 주인은 외래킬르 관리하는 곳이 주인이 된다
+  - 테이블 기준으로 생각해뽀면 회원 row 마다 팀의 PK를 가질수는 있어도
+  - 하나의 팀 row 에서 팀에 속한 여러 회원의 PK를 가질 수는 없다 
+  - 연관관계의 주인은 외래키를 가지게 되는 N쪽이라고 생각할 수 있고, 여기서는 회원쪽이 연관관계의 주인이 된다
+- OneToMany를 써야 하는 경우는 정말 많음에도, JPA 동작 원리상 OneToMany만을 사용하는 것은 권장하지 않는다
+  - OneToMany는 연관관계의 주인이 되는 외래 키가 다른 테이블에 있다
+  - 이런 구조 떄문에 연관관계 데이터가 변경되는 과정에서 불필요한 update가 실행된다
+- OneToMany의 성능 이슈를 해결하고 실무에서 사용하고자 한다면, OneToMany와 ManytoOne을 함께 사용하면 된다
+  - 관련하여 mappedBy 와 JoinColumn등을 정확히 선언하여 사용한다
+  - Service 메서드에서는 Entity를 그대로 리턴하지 않고 Entity를 적절히 변환한 객체 (여기서는 Info)를 리턴하도록 한다
+  - 예제 프로젝트에서 Item 과 ItemOptionGroup간의 매핑 코드는 다음과 같다
+    - Item 코드
+      ![image](https://user-images.githubusercontent.com/28394879/144953111-1df5368d-ff8c-4fac-a4f0-60b1047e2617.png) 
+    - ItemOptionGroup 코드  
+       ![image](https://user-images.githubusercontent.com/28394879/144953155-172048d9-fb13-4bac-bba3-c47c7af54fba.png)
+
+### MapStruct 사용
+- 복잡한 애플리케이션을 여러 개의 계층(이하 Layer)으로 나누어 개발하는 것은 각 계층의 관심 측면만을 전문적으로 다룬다는 점에서 의의가 있다
+  - 이 떄 각 Layer 마다 사용하고 전달되는 객체는 적절한 컨버팅 로직을 통해서 격리되고 변환되어야 한다
+  - 특정 Layer에서 사용되는 객체가 다른 Layer로 전달되는 과정에서 적절한 컨버팅이 없다면 Layer간의 의존 관계가 꺠질 수도 있다
+  - 경우에 따라서는 특정 기술 사용에 따른 예상치 못한 예외가 발생할 수도 있다 (Spring JPA 기반의 lazy loading 관련한 예외 등등)
+- Layer 간의 객체 변환 로직은 개발자가 일일이 직접 구현해도 되지만
+  - 반복적이고 불필요한 코드가 많아지게 되고
+  - 단순한 실수로 인한 개발 생산성이 떨어지게 된다
+
+- 이를 위해 많이 사용하는 매핑 라이브러리는 ModelMapper가 있는데, 여기에서는 MapStruct라는 라이브러리를 사용하고자 한다
+  - 동작 방식의 차이
+    - ModelMapper는 리플렉션 기반으로 동작하여 실제 매핑 로직을 쉽게 파악하기 어려우나
+    - MapStruct는 코드 생성 방식으로 동작하기 떄문에 생성된 코드를 통해 매핑 로직을 쉽게 파악할 수 있다
+    - MapStruct는 컴파일 타임에 매핑 오류를 인지하고 설정에 따라 빌드 시 에러를 던질 수도 있다
+  - 성능 측면에서
+    - MapStruct가 훨씬 더 좋다고 알려져 있다
+- MapStruct 사용 방법
+  - 의존성 추가
+    - build.gradle에 다음과 같은 dependency를 추가한다
+    ![image](https://user-images.githubusercontent.com/28394879/144953715-5f7ecbe8-bf83-4001-8b6c-c9cd2328ee00.png)
+    - https://mapstruct.org/documentation/stable/reference/html/#_gradle 참고
+    - https://mapstruct.org/documentation/stable/reference/html/#lombok 참고
+  - 매핑 선언
+    - 특별한 구현 없이 Mapper Interface만 정의하면 컴파일 과정에서 해당 인터페이스의 구현체를 생성한다
+      - https://mapstruct.org/ 의 [MapStruct in 2 Minutes] 참고
+    - source와 target의 attribute가 완전히 동일한 경우
+      - Mapper Interface 내부에 source와 target만 선언하면 된다
+          ![image](https://user-images.githubusercontent.com/28394879/144953887-d4d4f162-7e9d-41c9-95dc-ce305fb468b8.png)
+    - source와 target의 type은 동일하나 attribute가 약간 다른 경우
+      - 별도의 매핑 선언이 필요한 attribute 만 정의하면 된다
+         ![image](https://user-images.githubusercontent.com/28394879/144953955-d2516687-f60e-45f0-a486-5d2101b24234.png)
+    - 매핑 로직에서 java expression 사용이 필요한 경우
+      - java 키워드를 선언한 후 해당 로직을 작성하면 된다
+        ![image](https://user-images.githubusercontent.com/28394879/144954016-5c9f939f-7e50-42f1-a72d-ccbbba9f89cd.png)
+      - Intellij의 MapStruct Support Plugin을 활용하면 java expression 작성시의 오타를 방지할 수 있다 
+        ![image](https://user-images.githubusercontent.com/28394879/144954110-42f7cd1a-6640-448b-9838-ac0593e39247.png)
+    - 매핑 대상 객체에 Collection 요소가 포함된 경우
+      - Collection 요소에 대한 매핑 로직을 초가로 선언해야 한다
+      - Main 클래스 내에 List<OrderItem> 이라는 Collection이 존재하기 떄문에 Main 클래스에 대한 매핑 로직 선언 시, OrderItem에 대한 매핑 로직도 같이 선언해야 한다 
+        ![image](https://user-images.githubusercontent.com/28394879/144954232-d8316674-6bf4-4ef4-81e7-e7b2df7d4660.png)
+        ![image](https://user-images.githubusercontent.com/28394879/144954260-4f844f6a-e536-4360-a425-b5fa5f7e66b9.png)
+      - https://mapstruct.org/documentation/stable/reference/html/#mapping-collections 참고
+
+
+   
+
 </details>
 
 <details><summary> 4. Order Domain 개발 </summary>
