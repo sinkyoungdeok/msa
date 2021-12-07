@@ -1,5 +1,7 @@
 package dev.practice.order.domain.item;
 
+import dev.practice.order.domain.item.option.ItemOption;
+import dev.practice.order.domain.item.optiongroup.ItemOptionGroup;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.ToString;
