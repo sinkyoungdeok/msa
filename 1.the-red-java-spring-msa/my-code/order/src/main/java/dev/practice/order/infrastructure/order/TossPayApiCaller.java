@@ -1,4 +1,4 @@
-package dev.practice.order.infrastructure.order.payment;
+package dev.practice.order.infrastructure.order;
 
 import dev.practice.order.domain.order.OrderCommand;
 import dev.practice.order.domain.order.payment.PayMethod;
@@ -9,11 +9,11 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class KakaoPayApiCaller implements PaymentApiCaller {
+public class TossPayApiCaller implements PaymentApiCaller {
 
     @Override
     public boolean support(PayMethod payMethod) {
-        return PayMethod.KAKAO_PAY == payMethod;
+        return PayMethod.TOSS_PAY == payMethod;
     }
 
     @Override
