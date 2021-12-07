@@ -1123,6 +1123,202 @@ Factory가 새로운 객체를 만들어 내는데 반해 Repository는 기존 �
 
 <details><summary> 4. Order Domain 개발 </summary>
 
+## 4. Order Domain 개발
+
+### 요구사항
+- 시스템에 등록된 상품은 유저가 주문할 수 있다
+- 주문은 주문 등록, 결제, 배송 준비, 배송중, 배송 완료의 단계를 가진다
+- 주문 등록 과정에서는 결제 수단을 선택하고 상품 및 상품 옵션을 선택한다
+- 시스템에서 사용 가능한 결제수단은 1) 카드 2) 토스페이 3) 카카오페이 4) 네이버페이 등이 있다
+- 결제 과정에서는 유저가 선택한 결제수단으로 결제를 진행한다
+- 결제완료 후 유저에게 카카오톡으로 주문 성공 알림이 전달된다
+- 결제가 완료되면 배송준비 단계로 넘어간다
+- 배송중, 배송완료의 단계도 순차적으로 진행된다
+- **여기에서는 실제의 복잡한 주문 도메인 요구사항을 간소화 하였다 (취소 및 결제 PG 연동 등의 요구사항 생략)**
+
+### 도메인 계층 설계 및 구현 (domain package)
+#### Entity 구현
+- 아래의 Order Aggregate를 표현하는 클래스 다이어 그램이다. 
+  ![image](https://user-images.githubusercontent.com/28394879/145013478-fae09971-a9c4-4bdf-9899-835b269839e2.png)
+
+- 요구사항을 기반으로 Order와 OrderItem, OrderItemOptionGroup, OrderItemOption의 필수 속성과 메서드를 정의한다
+  - 필수 속성
+    - orderToken **(대체키)**
+    - userId
+    - payMethod
+    - status
+    - orderedAt
+    - 배송시 관련 정보군 (DeliveryFragment)
+    - 주문 상품의 item 군 필수 속성
+  - 필수 메서드
+    - 주문 상태 변경
+    - 주문 총 가격 계산
+  - 주문 상태 (status)
+    - INT - 주문 시작
+    - ORDER_COMPLETE - 주문완료
+    - DELIVERY_PREPARE - 배송준비
+    - IN_DELIVERY - 배송중
+    - DELIVERY_COMPLETE - 배송완료
+  - Order와 OrderItem과 OrderItemOptionGRoup, OrderItemOption 간의 연관관계를 설정한다
+    - Order를 Aggregate Root로 하여 하위 객체들을 1:N 관계로 매핑한다
+    - 앞에서 정의한대로 OneToMany, ManyToOne 양방향 참조로 설정하고 성능과 관계 설정의 타협점을 찾는다 
+
+#### Service 및 Implements 구현
+- OrderService <Interface> 에서 제공해야 하는 요구사항을 정의한다
+  - 주문 등록
+  - 주문 결제
+  - 주문 조회
+  - 배송 준비중
+  - 배송중
+  - 배송완료
+
+**주문 등록의 경우**  
+- Item Aggregate와 마찬가지로 1) Order 생성 후에 2) Order 안에 포함된 OrderItem 계열의 Entity를 생성한다
+- 주문 Aggregate를 생성하는 과정에서 validation check는 필수 로직이다. validation check 구현 형태는 크게 두 가지로 나뉠 수 있을 것이다
+  - 1) Entity 자체에서 확인이 가능한 것과 2) 별도의 Service에서 확인이 가능한 것
+  - 1) Entity 자체에서 확인이 가능한 것은
+    - 필수 프로퍼티의 존재 여부 체크이다
+    - 이는 OrderCommand와 Order의 생성자 내에서 필수값 존재 여부를 체크하면 된다
+    - 외부 Service의 도움이 필요 없다 
+  - 2) 별도의 Service 에서 확인이 가능한 것은
+    - 외부에서 전달된 주문 금액과 DB에 저장된 주문 상품의 금액과의 일치 여부 체크, 파트너 또는 상품이 판매 가능한 상태인지 체크 등이다
+    - 외부에서 전달된 itemToken으로 item을 조회한 후에, 외부에서 전달된 itemPrice와 비교하여 가격의 일치 여부를 체크한다
+    - 이런 경우 itemReader와 같은 외부 Service의 도움이 필요하다
+  - validation의 경우
+    - Aggregation 내에 포함시켜서 전체 로직의 응집도를 높이는 것이 좋겠지만
+    - Aggregation 전체를 생성하는 Factory내에 두어서 Aggregation의 복잡도를 줄일 수도 있다
+    - 또는 validation을 처리하는 별도의 구현체를 두고 Entity 생성 로직 과정에서 이를 활용할 수도 있다
+
+**주문 결제의 경우**
+- 로직의 논리적인 순서상 다음과 같은 flow를 가지게 된다
+  - orderToken 으로 주문 정보를 가져온 후
+  - 외부의 결제 서비스를 활용하여 실제 결제 과정을 처리하고
+  - 이후 주문 상태를 주문완료로 변경한다
+  - (이상 위의 순서를 flow#1 이라고 지칭한다)
+    ![image](https://user-images.githubusercontent.com/28394879/145015401-bcde5e6b-1ad5-471e-8fa9-b3cbc4a15c5e.png)
+  - 다만 논리적인 순서와 다르게 데이터의 정합성 측면에서 아래와 같은 순서로 서비스를 처리한느 것이 좋을 수 있다
+    - orderToken 으로 주문 정보를 가져온 후 
+    - **주문 상태를 주문완료로 변경하고**
+    - **이후 외부의 결제 서비스를 활용하여 실제 결제 과정을 처리한다**
+    - (이상 위의 순서를 **flow#2** 이라고 지칭한다)
+    ![image](https://user-images.githubusercontent.com/28394879/145015667-8dfe9625-1b0b-4c9e-9d00-de88025efd74.png)
+- 로직마다 에러 발생 가능성이 어디가 더 높은지, 한번 실행된 로직의 rollback이 수월한지를 따져본다면 **flow#2**가 좀더 나은 구현이라고 생각 할 수도 있다
+  - **flow#1**의 실행 과정에서 order.orderComplete() 에서 Exception이 발생했다고 가정해보자 (RuntimeException)
+  - paymentOrder는 하나의 transaction으로 묶여있기 때문에 전체 메서드는 rollback이 된다
+  - 그러나 paymentProcessor의 경우 외부 서비스 Api CAll이기 때문에, 정상적으로 호출이 되었다면 transaction이 rollback되더라도 변경되고 처리된 데이터는 rollback 되지 않는다. 즉, 주문은 complete 처리되지 않았지만 유저의 돈은 이미 지불되었다는 것이다
+  - 이를 해결하려면 try-catch 구문을 활용하여 catch 구문 내부에서 보상 트랜잭션 API (유저의 결제 금액 환불)를 호출해야 한다. 이는 로직의 복잡도를 증가시킨다
+  - 결제의 논리적인 순서와는 약간 다르겠지만 order.orderComplete()과 paymentProcess.pay()의 호출 순서만 바꿔주면, 실행 과정에서 Exception이 발생하더라도 외부 서비스를 위한 보상 트랜잭션 API은 호출하지 않아도 된다 (외부 서비스 API 가 아직 실행되지 않았기 떄문에)
+  - 또한 paymentProcess.pay() 실행 중에 예외가 발생했으면 order.orderComplete()의 실행 결과도 rollback 될 것이기 때문에 데이터 정합성은 유지된다
+- 도메인 로직 처리 과정에서 이전 단계에서 완료한 모든 작업을 실행 취소해야 하는 경우가 있다
+  - 예를 들어 주문 처리 과정에서 상품의 재고를 차감했는데 결국 주문 처리가 정상적으로 이루어지지 않았따면 -> 재고도 원복해야 한다
+  - 과거에는 분산 트랜잭션 (2PC) 등을 이용해서 여러 서비스의 데이터 처리를 전역 트랜잭션으로 묶어서 커밋과 롤백이 가능하게 했따면
+  - 서비스 간의 독립적을 중시하는 msa 구조에서는 이런 상황을 보상 트랜재겻ㄴ으로 처리한다
+    - 즉, 주문 처리가 실해했다면 그 전 단계에서 차감했던 재고 수량을 원복하는 API를 다시 호출하는 방식을 말한다
+  - 하단의 **보상 트랜잭션** 단락 참고
+- 결제 처리는 유저가 선택한 결제 수단에 맞는 PaymentProcessor 가 처리하게끔 한다
+  - 시스템에서 제공하는 결제 수단은 1) 카드 2) 토스페이 3) 카카오페이 4) 네이버페이 - 4가지 이다
+  - 구체적인 구현으로 들어간다면 각 결제 수단마다 결제를 처리하는 parameter와 flow가 다 다르겠지만
+  - 도메인 로직에서는 이를 추상화하여 "해당 주문의 결제를 처리한다"라는 서비스의 흐름을 한 눈에 아가할 수 있도록 해야 한다
+    - 세세한 구현은 Service가 아니라 infrastructure의 PaymentProcessor 클래스에 위임하고, Service 도메인에서는 이를 활용하기 위한 Interface를 선언하고 상요한다
+    - DIP 개념을 활용하여 도메인이 사용하는 Interface의 실제 구현체를 주입 받아 (Injection) 사용할 수 있도록 한다
+    - 이렇게 하면 하나의 Service 메서드를 읽기만 해도 도메인의 흐름을 파악할 수 있고, 세부 구현은 새로운 구현체를 Injection하여 쉽게 변경할 수 있다
+  - PaymentProcessor는 주문의 결제를 처리하는 객체이고 아래와 같은 세부 구현을 가진다
+    - PaymentValidator - 결제 과정에서의 validation check
+    - PaymentApiCaller - 결제 수단에 맞는 ApiCaller 호출
+    - Spring이 제공하는 DI 기능을 활용하여 각각의 인터페이스를 구현한 구현체를 List로 받아 활용한다
+    - PaymentValidator interface의 경우 - 아래와 같은 메서드 시그니처를 선언하고, 다양한 validation 요구사항을 커버하는 각각의 validation 구현체를 생성하여 활용한다
+      ```java
+      public interface PaymentValidator {
+      void validate(Order order, OrderCommand.PaymentRequest paymentRequest);
+      }
+      ``` 
+      - 예제 구현에서는 
+        - 주문 가격 체크 Validator
+        - 결제 수단 체크 Validator
+        - 주문 상태 체크 Validator 를 구현하였다
+    - PaymentApiCaller interface의 경우 - 아래와 같은 메서드 시그니처를 선언하고, 다양한 결제수단 구현체를 생성하여 활용한다
+      ```java
+      public interface PaymentApiCAller {
+        boolean support(PayMethod payMethod);
+        void pay(OrderCommand.PaymentRequest request);
+      }
+      ``` 
+      - support 메서드는 전달된 PayMethod를 자신이 처리할 수 있는지(=support 할 수 있는) 판별하는 return 값 boolean의 메서드이다
+      - pay메서드는 전달된 paymenRequest를 활용하여 실제적인 결제 과정을 처리하는 메서드이다
+      - 예제 구현에서는
+        - 카드
+        - 토스페이
+        - 카카오페이
+        - 네이버페이를 구현하였다 (실제의 pay 메서드는 구현하지 않음)
+    - PaymentProcessor를 중심으로 한 클래스 다이아그램은 아래와 같다
+      ![image](https://user-images.githubusercontent.com/28394879/145018736-3f21adbf-b039-4a0b-a55a-fd3eefc2178c.png)
+    - validation 과정에서 사용되는 주문 가격의 총 금액을 계산하는 로직의 구조는 다음과 같다
+      - 주문의 총 금액은 Order Aggregate의 Root인 Order가 계산한다
+      - 주문에 포함된 OrderItem 각각의 가격 총합을 구해야 한다. 이는 OrderItem의 calculateTotalAmount() 에서 계싼한다
+      - OrderItem의 가격은 각각 Item과 ItemOption의 가격의 합으로 이루어진다. 그렇기 때문에 calculateTotalAmount()에서 각각의 Item과 ItemOption의 가격의 합을 계산한다
+      - OrderItem.calculateTotalAmount()의 로직은 아래와 같다
+        ```java
+        public Long calculateTotalAmount() {
+        var itemOptionTotalAmount = orderItemOptionGroupList.stream()
+        .mapToLong(OrderItemOptionGroup::calculateTotalAmount)
+        .sum();
+        return (itemPrice + itemOptionTotalAmount) * orderCount;
+        }
+        ``` 
+      - PayAmountValidator에서 사용하는 주문 가격 계산 과정에서의 객체간 상호 작용은 다음과 같다
+        ![image](https://user-images.githubusercontent.com/28394879/145019612-c5d26e0f-a2ab-4bdf-8a22-2f416af6ba0c.png)
+
+
+**주문 조회의 경우**  
+- Order와 OrderItemList를 조회한 후에 
+- Mapper를 이용하여 OrderInfo 객체로 변환하여 리턴한다
+
+**그 외 배송 관련 로직은 설명에서 생략 - 간단한 코드로 대체**
+- 배송업체와 서비스 간의 flow를 생각하여 그림을 제공하기
+  - 배송 준비중 / 배송중 / 배송완료 는 각각 수신자가 다르다
+
+
+### 응용 계층, 외부 인터페이스 계층 구현 (application, interfaces package)
+#### Facade 구현
+- Order Facade 에서는 order domain에서 요구사항을 처리하도록 domain service를 호출하는 이상의 역할은 없다
+- 이런 경우 Controller에서 곧장 Service를 호출할 수도 있지만, 추후의 요구사항 대응 buffer를 위해 Facade를 유지하는 것이 나을 수도 있다. 여기에서는 Facade를 사용한다
+  - 프로젝트 전체의 구조 유지
+  - 추후 요구사항 추가 및 변경의 대응에 용이함
+
+#### Controller 구현
+- Order Aggregate 생성을 위한 request dto와 OrderInfo 조회 시 사용할 response dto는 Order Aggregate 만큼 복잡한 구조를 가진다
+  - 이런 경우 dto를 domain측 객체로 변환 시 bolierplate code가 많이 생길 수 있다
+  - 이를 MapStruct를 사용하여 해결한다
+
+---
+
+### 보상 트랜잭션 
+- msa 환경에서는 하나의 프로세스를 완성하기 위해서는 여러 도메인의 연산을 모두 처리해야 하는 경우가 있다
+  - 가령 주문 완료의 경우
+    - 물류창고에서 물품을 확인하고
+    - 유저 결제를 완료 시킨 후에 
+    - 멤버십에 포인트를 부여하고
+    - 물품 배송을 시작하는 프로세스를 모두 처리해야 한다
+  - 그런데 만약 하나의 프로세스를 처리하는 중간 과정에서 에러가 발생했다면
+    - monolithic구조에서는 모든 프로세스가 하나의 트랜잭셔능로 묵였을 것이기 때문에 rollback 처리가 간단하지만
+    - msa 구조에서는 에러 발생 직전의 중간 프로세스에서는 API 호출을 통해 처리가 완료 되었을 것이라서 전체 rollback이 쉽지 않다
+    - msa 의 분산 트랜잭션 구조에서 프로세스 rollback을 위해 등장하는 개념이 **보상 트랜잭션**이다
+  - **보상 트랜잭션**은 이전에 커밋된 트랜잭션을 취소하는 연산이다
+    - 결제가 완료된 프로세스는 결제를 취소하는 연산을 발생시키고 
+    - 포인트를 부여했다면 포인트를 다시 회수하는 식의 연산을 발생시키는 것이다
+  - 하지만 이런 **보상 트랜잭션**은 일반적인 데이터베이스 롤백과는 완전히 일치하지는 않는다
+    - 이미 실행된 작업을 회수하는 개념이 아니라 추가적인 실행을 통해 기존 작업을 보완하는 방식에 가깝다
+    - 주문 완료 메일이 발생되었다면 메일을 회수하는게 아니라 주문 취소 메일을 다시 보내는 방식이다
+  - 경우에 따라서는 프로세스 내의 연산 순서를 조정하여 **보상 트랜잭션**의 발생 횟수 자체를 줄일 수도 있다
+    - 외부 서비스 API 호출과 같이 -> 예외 발생 가능성이 높은 프로세스를 가장 먼저 실행하거나
+    - Entity의 상태 변경과 같이 -> 데이터베이스 롤백이 쉬운 프로세스부터 먼저 실행하거나 
+    - 비즈니스 순서만 적절히 변경하면 예외 발생 시 보상 트랜잭션 발생 자체를 없앨 수 있거나
+      - 결제 완료 -> 포인트 지급 -> 배송 준비중 이라는 프로세스가 있다고 해보자
+      - 배송 준비중의 경우 상품 품절로 인한 예외가 자주 발생할 수 있다고 가정하자
+      - 이런 맥락이라면 결제 완료 -> 배송 준비중 -> 포인트 지급 이라는 비즈니스 순서만 바꾸어도 배송 준비중 과정에서 예외가 발생하더라도 포인트 지급에 대한 보상 트랜잭션, 즉 포인트 회수라는 프로세스 실행은 하지 않아도 되는 로직 개선이 이루어지게 된다
+  - https://docs.microsoft.com/ko-kr/azure/architecture/patterns/compensating-transaction 참고
+      
+
 </details>
 
 # 4. 선물하기 프로젝트 개발
