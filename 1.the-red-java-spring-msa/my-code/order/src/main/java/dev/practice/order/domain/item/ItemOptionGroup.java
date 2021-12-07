@@ -43,4 +43,9 @@ public class ItemOptionGroup extends AbstractEntity {
         this.ordering = ordering;
         this.itemOptionGroupName = itemOptionGroupName;
     }
+
+    public ItemOptionGroup addItemOption(ItemOption itemOption) {
+        this.itemOptionList.add(itemOption);
+        return this;
+    }
 }

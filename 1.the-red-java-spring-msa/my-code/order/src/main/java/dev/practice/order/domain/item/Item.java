@@ -13,6 +13,7 @@ import org.apache.commons.lang3.StringUtils;
 import javax.persistence.*;
 import java.util.List;
 
+@Getter
 @Entity
 @NoArgsConstructor
 @Table(name = "items")
@@ -27,7 +28,6 @@ public class Item extends AbstractEntity {
     private String itemName;
     private Long itemPrice;
 
-    // Item : ItemOptionGRoup 1:N
     @OneToMany(fetch = FetchType.LAZY, mappedBy = "item", cascade = CascadeType.PERSIST)
     private List<ItemOptionGroup> itemOptionGroupList = Lists.newArrayList();
 
@@ -57,15 +57,15 @@ public class Item extends AbstractEntity {
         this.status = Status.PREPARE;
     }
 
-    public void changePrepare() {
-        this.status = Status.PREPARE;
-    }
-
-    public void changeOnSales() {
+    public void changeOnSale() {
         this.status = Status.ON_SALE;
     }
 
-    public void endOfSales() {
+    public void changeEndOfSale() {
         this.status = Status.END_OF_SALE;
+    }
+
+    public boolean availableSales() {
+        return this.status == Status.ON_SALE;
     }
 }
