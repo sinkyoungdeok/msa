@@ -1519,3 +1519,19 @@ Factory가 새로운 객체를 만들어 내는데 반해 Repository는 기존 �
 </details>
 
 # 5. MSA 전환과 운영에 대한 tip
+
+<details><summary> 1. MSA 전환과 운영에 대한 tip </summary>
+
+</details>
+
+<details><summary> 2. 사전 작업 </summary>
+
+</details>
+
+<details><summary> 3. 과정 </summary>
+
+</details>
+
+<details><summary> 4. 고도화 </summary>
+
+</details>
