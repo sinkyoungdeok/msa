@@ -1,4 +1,4 @@
-package dev.practice.order.infrastructure.order;
+package dev.practice.order.infrastructure.order.payment;
 
 import dev.practice.order.domain.order.OrderCommand;
 import dev.practice.order.domain.order.payment.PayMethod;

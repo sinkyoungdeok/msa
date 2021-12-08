@@ -17,13 +17,10 @@ import javax.validation.Valid;
 @RequestMapping("/api/v1/partners")
 public class PartnerApiController {
     private final PartnerFacade partnerFacade;
-    private final PartnerDtoMapper partnerDtoMapper;
 
     @PostMapping
     public CommonResponse registerPartner(@RequestBody @Valid PartnerDto.RegisterRequest request) {
-        // dto reqeust -> command mapping
-
-        var command = partnerDtoMapper.of(request);
+        var command = request.toCommand();
         var partnerInfo = partnerFacade.registerPartner(command);
         var response = new PartnerDto.RegisterResponse(partnerInfo);
         return CommonResponse.success(response);

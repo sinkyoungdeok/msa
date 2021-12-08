@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 public class NotificationExecutor implements NotificationService {
+
     @Override
     public void sendEmail(String email, String title, String description) {
         log.info("sendEmail");
@@ -14,11 +15,11 @@ public class NotificationExecutor implements NotificationService {
 
     @Override
     public void sendKakao(String phoneNo, String description) {
-
+        log.info("sendKakao");
     }
 
     @Override
     public void sendSms(String phoneNo, String description) {
-
+        log.info("sendSms");
     }
 }

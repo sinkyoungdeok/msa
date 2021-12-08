@@ -14,10 +14,8 @@ import org.springframework.stereotype.Service;
 public class PartnerFacade {
     private final PartnerService partnerService;
     private final NotificationService notificationService;
-    public PartnerInfo registerPartner(PartnerCommand command) {
-        // 1. partnerService regis
-        // 2. email
 
+    public PartnerInfo registerPartner(PartnerCommand command) {
         var partnerInfo = partnerService.registerPartner(command);
         notificationService.sendEmail(partnerInfo.getEmail(), "title", "description");
         return partnerInfo;

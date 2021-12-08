@@ -1,6 +1,5 @@
 package dev.practice.order.domain;
 
-
 import lombok.Getter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -14,6 +13,7 @@ import java.time.ZonedDateTime;
 @MappedSuperclass
 @EntityListeners(AuditingEntityListener.class)
 public class AbstractEntity {
+
     @CreationTimestamp
     private ZonedDateTime createdAt;
 
