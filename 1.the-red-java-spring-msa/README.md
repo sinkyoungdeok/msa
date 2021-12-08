@@ -1522,6 +1522,28 @@ Factory가 새로운 객체를 만들어 내는데 반해 Repository는 기존 �
 
 <details><summary> 1. MSA 전환과 운영에 대한 tip </summary>
 
+## 1. MSA 전환과 운영에 대한 tip 
+
+Microservice Architecture (이하 msa)를 이해하고 적용하기 위한 기술과 이론은 정말 많고 이를 모두 설명하고 전달한느 것은 한계가 있다고 생각이다.  
+현재 존재하는 다양한 오픈소스와 기능만 살펴봐도
+- Spring 진영에서는 Spring Cloud를 통해 msa 적용에 필요한 다양한 기능을 제공하고 있다
+- 컨테이너 오케스트레이션 오픈 소스인 kubernetes (이하 k8s) 에서도 msa 적용에 필요한 다양한 기능을 동일하게 젝오한다
+
+msa 전환과 운영에 필요한 이론적인 내용도 많다
+- monolithic을 적절한 도메인으로 분리하는 전략
+- 점진적인 msa 전환을 위한 다양한 기법
+- 프로세스간의 다양한 통신 방법과 각각의 장단점
+- 분산 트랜잭션과 사가 패턴
+- API Gateway, Service Discovery 등과 같은 다양한 아키텍처와 운영 기술
+
+여기에서는 29CM에서 모놀리틱 시스템을 msa로 전환하는 점진적인 과정과 그 안에서의 기술과 이론적인 배경을 설명하고자 한다  
+
+msa 전환과 운영에 대한 tip은 
+- msa 전환을 위한 사전 작업
+- msa 전환의 과정
+- msa 전환의 고도화
+등으로 나누어 제공한다
+
 </details>
 
 <details><summary> 2. 사전 작업 </summary>
