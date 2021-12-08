@@ -1456,6 +1456,66 @@ Factory가 새로운 객체를 만들어 내는데 반해 Repository는 기존 �
 
 <details><summary> 2. 선물하기 프로젝트 구현 </summary>
 
+## 2. 선물하기 프로젝트 구현
+
+### 선물하기 주요 요구사항은 다음과 같다 
+- 선물하기 주문은 일반 주문과 달리, 주문 과정에서 배송지 주소를 확정할 수 없다
+  - 선물하기 주문을 결제한 사람이 해당 주문을 지인하게 선물로 전달하고, 이 후 수령자가 본인의 배송지 주소를 입력해야 하는 배송이 시작되는 구조이기 때문이다
+- 선물하기 결제 후 구매자와 수령자에게 카카오톡이나 LMS로 알림이 발송되어야 한다
+- 수령자는 선물을 수락하거나 거절할 수 있다
+- 선물하기 서비스 개발과 운영 시에는 기존 주문 서비스의 기능에는 영향이 없도록 하면서 최대한 빠르게 개발이 진행되어야 한다
+
+선물하기 구매 flow는 다음과 같다  
+![image](https://user-images.githubusercontent.com/28394879/145142801-1f5320e5-8f12-43c4-839e-7145742cec53.png)
+
+
+### 해당 프로젝트 구현 시 - 필수적인 환경 셋팅
+- 해당 프로젝트에서는 aws sqs 기반의 비동기 메시징 구간 개발이 있으므로 1) aws 회원 가입 2) aws sqs 생성 3) aws 내에서의 사용자 생성과 권한 부여 등이 필요하다
+  - 1) aws 의 회원 가입은 관련 자료가 많고 어렵지 않으므로 여기에서는 생략하고
+  - 2) aws sqs 생성과 3) aws 에서의 계정 생성 방법을 기술한다
+  - 회원 가입 직후에는 일정 사용량은 무료로 이용이 가능하다 (여기 실습 과정에서는 비용 지불 없이 테스트가 가능하다고 생각한다)
+
+**aws sqs 생성**  
+- aws 로그인에 성공하면 아래와 같은 console 화면을 확인할 수 있다 
+  - ![image](https://user-images.githubusercontent.com/28394879/145142972-c5f88316-8368-4d0b-938d-68728d7ca7e8.png)
+- 해당 화면에서 Simple Queue Service 메뉴를 찾고 아래와 같은 화면이 나오도록 한다
+  - 오른쪽 상단의 **대기열 생성** 버튼을 클릭한다 
+    ![image](https://user-images.githubusercontent.com/28394879/145143034-c32c1656-da9f-4bb8-9e24-efd0a8069ee8.png)
+- 해당 화면에서 FIFO를 선택하고, 해당 Queue에 대한 이름을 입력한다
+  - (실습 과정이므로) 그 외 설정은 그대로 유지한다
+  - 입력 후, 오른쪽 아래에서 **대기열 생성** 버튼을 클릭한다
+    ![image](https://user-images.githubusercontent.com/28394879/145143103-5fb72fb2-456f-481c-9b59-59084b403985.png)
+  - 아래와 같은 화면이 뜨면 실습을 위한 aws sqs 생성이 완료된 것이다
+    ![image](https://user-images.githubusercontent.com/28394879/145143150-431cc28e-b8fa-48fa-8bd4-85e0772d0fe9.png)
+    - 예시 코드에서는 aws sqs 의 이름을 **order-payComplete-live.fifo**로 명명했으므로 sqs 생성 시에도 동일하게 이름을 맞추면 된다
+
+**aws 계정 생성**  
+- 콘솔 홈에서 IAM 서비스를 찾아 들어가서 아래와 같은 화면이 나오도록 한다
+  - 해당 화면 좌측에서 **사용자** 메뉴를 클릭한다
+    ![image](https://user-images.githubusercontent.com/28394879/145143271-3912ea8f-4b53-4752-81ca-6c65d7d64d2d.png)
+- 사용자 화면에서 우측 상단의 **사용자 추가** 버튼을 클릭한다
+  ![image](https://user-images.githubusercontent.com/28394879/145143323-c1cff407-37fb-460d-bc4f-afdd421c9623.png)
+- 사용자 이름과 엑세스 유형을 선택하고 다음 단계로 넘어간다
+  - 사용자 이름은 적절하게 정한다
+  - 엑세스 유형은 **프로그래밍 방식 엑세스**를 선택한다
+  - 오른쪽 하단의 **다음:권한** 버튼을 클릭한다
+    ![image](https://user-images.githubusercontent.com/28394879/145143395-aa0cf171-1e33-40e9-9186-c78346a51fa6.png)
+- 권한 설정 화면에서 기존 정책 직접 연결 탭을 누르고 아래와 같은 화면이 나오도록 한다
+  - AmazonSQSFullAccess 권한을 체크한 후
+  - 오른쪽 하단의 다음:태그 버튼을 클릭한다
+    ![image](https://user-images.githubusercontent.com/28394879/145143463-536ea100-bcf5-4735-b562-8d315be16430.png)
+- 태그 추가 화면은 입력 없이 skip 하고 다음으로 넘어간다
+   ![image](https://user-images.githubusercontent.com/28394879/145143511-2e6d7f9c-ce76-494c-a900-9752c7f1ef9a.png)
+- 다음 화면 확인 후 오른쪽 하단의 **사용자 만들기** 버튼을 클릭한다
+  ![image](https://user-images.githubusercontent.com/28394879/145143579-4d37ce71-ca31-447a-86bf-5e3cf843fd4f.png)
+- 아래와 같은 화면이 뜨면 사용자 생성, 권한 부여가 완료된 것이다
+  - 엑세스 키 ID와 비밀 엑세스 키를 복사한 후에
+  - 예제 프로젝트의 application.yml 에서 cloud.aws.access-key와 cloud.aws.secret-key를 채워 넣는다
+  ![image](https://user-images.githubusercontent.com/28394879/145143671-1ed45718-5a67-47fb-8788-3ee7f0cd7697.png)
+- 해당 access-key 설정은 1) 주문하기 프로젝트 2) 선물하기 프로젝트 둘 다 해줘야 한다
+  - 주문하기 프로젝트는 SQS에 메시지를 publish 하고
+  - 선물하기 프로젝트는 SQS에서 메시지를 subscribe 한다
+     
 </details>
 
 # 5. MSA 전환과 운영에 대한 tip
